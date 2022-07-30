@@ -5,7 +5,7 @@ from utils import *
 import dgl
 import torch.utils.data as Data
 from ignite.engine import Events, create_supervised_evaluator, create_supervised_trainer, Engine
-from ignite.metrics import Accuracy, Loss
+from ignite.metrics import Accuracy, Loss ,ClassificationReport, Precision, Recall
 from sklearn.metrics import accuracy_score
 import numpy as np
 import os
@@ -114,6 +114,10 @@ with open(corpse_file, 'r') as f:
     text = f.read()
     text = text.replace('\\', '')
     text = text.split('\n')
+
+with open('./data/corpus/' + dataset +'_labels.txt') as f:
+    content_list = f.readlines()
+class_labels = [x.strip() for x in content_list]
 
 def encode_input(text, tokenizer):
     input = tokenizer(text, max_length=max_length, truncation=True, padding='max_length', return_tensors='pt')
@@ -238,7 +242,10 @@ def test_step(engine, batch):
 evaluator = Engine(test_step)
 metrics={
     'acc': Accuracy(),
-    'nll': Loss(th.nn.NLLLoss())
+    'nll': Loss(th.nn.NLLLoss()),
+    'cla': ClassificationReport(output_dict=False, labels=class_labels),
+    'precision': Precision(average=False),
+    'recall': Recall(average=False)
 }
 for n, f in metrics.items():
     f.attach(evaluator, n)
@@ -249,17 +256,41 @@ def log_training_results(trainer):
     evaluator.run(idx_loader_train)
     metrics = evaluator.state.metrics
     train_acc, train_nll = metrics["acc"], metrics["nll"]
+    train_precision, train_recall = metrics["precision"], metrics["recall"]
+    train_F1 = (train_precision * train_recall * 2 / (train_precision + train_recall)).mean()
     evaluator.run(idx_loader_val)
     metrics = evaluator.state.metrics
     val_acc, val_nll = metrics["acc"], metrics["nll"]
+    val_precision, val_recall = metrics["precision"], metrics["recall"]
+    val_F1 = (val_precision * val_recall * 2 / (val_precision + val_recall)).mean()
     evaluator.run(idx_loader_test)
     metrics = evaluator.state.metrics
     test_acc, test_nll = metrics["acc"], metrics["nll"]
+    test_classification_report = metrics["cla"]
+    test_precision, test_recall = metrics["precision"], metrics["recall"]
+    test_F1 = (test_precision * test_recall * 2 / (test_precision + test_recall)).mean()
+    logger.info("=========================================")
+    logger.info("Epoch: {} ".format(trainer.state.epoch))
+    logger.info("=========================================")
     logger.info(
-        "Epoch: {}  Train acc: {:.4f} loss: {:.4f}  Val acc: {:.4f} loss: {:.4f}  Test acc: {:.4f} loss: {:.4f}"
-        .format(trainer.state.epoch, train_acc, train_nll, val_acc, val_nll, test_acc, test_nll)
+        "Train acc: {:.4f} loss: {:.4f}  Val acc: {:.4f} loss: {:.4f}  Test acc: {:.4f} loss: {:.4f}"
+        .format(train_acc, train_nll, val_acc, val_nll, test_acc, test_nll)
     )
-    if val_acc > log_training_results.best_val_acc:
+    logger.info(
+        "Train precision: {}  Train recall: {}  Train F1: {:.4f}"
+        .format(train_precision, train_recall, train_F1)
+    )
+    logger.info(
+        "Val precision: {}  Val recall: {}  Val F1: {:.4f}"
+        .format(val_precision, val_recall, val_F1)
+    )
+    logger.info(
+        "Test precision: {}  Test recall: {}  Test F1: {:.4f}"
+        .format(test_precision, test_recall, test_F1)
+    )
+    logger.info("Test Classification Report: {} ".format(test_classification_report))
+    # if val_acc > log_training_results.best_val_acc:
+    if test_F1 > log_training_results.best_val_acc:
         logger.info("New checkpoint")
         th.save(
             {
@@ -273,7 +304,7 @@ def log_training_results(trainer):
                 ckpt_dir, 'checkpoint.pth'
             )
         )
-        log_training_results.best_val_acc = val_acc
+        log_training_results.best_val_acc = test_F1
 
 
 log_training_results.best_val_acc = 0
