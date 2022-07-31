@@ -25,8 +25,10 @@ class BertGCN(th.nn.Module):
         self.m = m
         self.nb_class = nb_class
         if pretrained_model == 'bertweet_fa':
-            self.tokenizer = BertTokenizer.from_pretrained('arm-on/BERTweet-FA')
-            self.model = BertForMaskedLM.from_pretrained('arm-on/BERTweet-FA')
+            # self.tokenizer = BertTokenizer.from_pretrained('arm-on/BERTweet-FA')
+            # self.bert_model = BertForMaskedLM.from_pretrained('arm-on/BERTweet-FA')
+            self.tokenizer = AutoTokenizer.from_pretrained('arm-on/BERTweet-FA')
+            self.bert_model = AutoModel.from_pretrained('arm-on/BERTweet-FA')
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(pretrained_model)
             self.bert_model = AutoModel.from_pretrained(pretrained_model)
